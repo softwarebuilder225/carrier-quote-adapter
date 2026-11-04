@@ -2,8 +2,21 @@
 
 One line per decision: what we chose, the alternative we rejected, and why.
 Entries marked (AI proposed / I confirmed) or (AI proposed / I corrected) so the
-history of the human-AI collaboration is visible.
+history of the human-AI collaboration is visible. Step 1 entries recorded 2026-11-04 after
+reviewing the first draft of docs/mapping.md.
 
 | # | Decision | Rejected alternative | Why | Origin |
 |---|----------|----------------------|-----|--------|
-| 1 | | | | |
+| 1 | `claims_last_5_years` is **unknown**: asked with an empty input, the 3-year count shown as a hint, and the answer validated to be ≥ `claims_last_3_years` | Copy `claims_last_3_years` across as the 5-year count; or pre-fill it as a starting value | Different time window: a 3-year count is a lower bound for a 5-year count, not the same number. A pre-filled value invites silent under-reporting on a misrepresentation-sensitive question | AI proposed / I confirmed |
+| 2 | `pets` is **partial**: pre-fill `["Dog"]` when `has_dog` is true, pre-fill nothing when false, always ask the customer to confirm the full list | `has_dog ? ["Dog"] : ["None"]` | `has_dog` only says whether "Dog" is in the list; it says nothing about cats or other animals, and false is not "None" | AI proposed / I confirmed |
+| 3 | `contents_coverage` rounds **up** to the smallest option ≥ `personal_property_value` (32 000 → 50 000, 12 000 → 25 000) | Nearest option; rounding down | Nearest maps 32 000 → 25 000 and under-insures by 7 000; rounding up is the only direction that never leaves the customer short | AI proposed / I confirmed |
+| 4 | `personal_property_value` above 75 000, the largest coverage option, makes the customer **ineligible**; the reason names the maximum. ASSUMPTION, not in the Harbor JSON | Pre-fill 75 000 and warn about under-coverage, adding no rule the JSON lacks (the AI's recommendation) | Harbor's product cannot cover the belongings, so it should not quote; the rule is flagged as an assumption in code and docs | AI proposed / I corrected |
+| 5 | `residence_state` outside Harbor's four options is an **eligibility failure**, not a question; the profile code is converted to the full name | Render the select and let the customer pick a served state | A state of residence is a fact; offering a choice would invite a false answer | AI proposed / I confirmed |
+| 6 | `dog_breed`: trim + case-insensitive exact match against the options → answered; no match → "Other" as **partial** with the original text in the hint; a dog with a null breed → unknown | Substring matching; silently sending "Other" as answered | Exact matching cannot misfile a breed; the customer corrects near-misses such as "Labrador Retriever" | AI proposed / I confirmed |
+| 7 | Eligibility runs **before** the customer is asked anything and reports **all** failing reasons together | Stop at the first failure | Profile B fails on state and age; the customer should see both rather than fix one and hit the next | AI proposed / I confirmed |
+| 8 | Dates are parsed and formatted by **string splitting**; age increments on the birthday itself; `minAge` from the JSON is the only age rule | `new Date("YYYY-MM-DD")`; a maximum age | `new Date` on a date-only string is UTC and shifts a day west of Greenwich; no maximum age exists in the JSON | AI proposed / I confirmed |
+| 9 | An unanswered optional field (`building_has_sprinklers`) is **omitted** from the request | Send `false` | "Didn't answer" is not "no" | AI proposed / I confirmed |
+| 10 | **No invented carrier rules**: no breed exclusion, no claims cap, no maximum age, no minimum property value, no phone format beyond non-empty, no ZIP-to-state check | Each of those, which an integration "usually" has | Pit Bull and Rottweiler are selectable options, and none of the other rules appears in the JSON | AI proposed / I confirmed |
+| 11 | Profile `state` is the state of residence and `first_name`/`last_name` are legal names. ASSUMPTION | Ask the customer to re-enter them | The profile has no other candidate fields | AI proposed / I confirmed |
+| 12 | `contents_coverage` status is **partial**: pre-filled with the rounded-up option, editable | `answered`: read-only at the rounded-up option | A coverage amount is a purchase choice; only its lower bound comes from the profile | AI proposed / I confirmed |
+| 13 | "None" in `pets` is **exclusive** with Dog, Cat and Other, enforced in the UI and at submit. ASSUMPTION | Leave it to the customer | "None" plus "Dog" is a contradiction, not a carrier rule | AI proposed / I confirmed |
