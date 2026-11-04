@@ -8,6 +8,7 @@ export const harborForm = formJson as CarrierForm;
 
 export const harborAdapter = createAdapter({
   id: "harbor",
+  name: "Harbor",
   form: harborForm,
   resolvers: harborResolvers,
   eligibilityRules: harborEligibilityRules,

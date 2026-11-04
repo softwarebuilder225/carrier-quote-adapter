@@ -124,6 +124,8 @@ export type ResolverMap = Record<string, FieldResolver>;
 
 export interface CarrierAdapter {
   id: string;
+  /** Short display name, e.g. "Harbor". */
+  name: string;
   form: CarrierForm;
   /** What the profile answers, per field, as of `now`. */
   resolve(profile: CustomerProfile, now: Date): Resolutions;

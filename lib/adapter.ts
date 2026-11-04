@@ -15,13 +15,14 @@ import type {
 
 export interface AdapterConfig {
   id: string;
+  name: string;
   form: CarrierForm;
   resolvers: ResolverMap;
   eligibilityRules?: EligibilityRule[];
   customRules?: ValidationRule[];
 }
 
-export function createAdapter({ id, form, resolvers, eligibilityRules = [], customRules = [] }: AdapterConfig): CarrierAdapter {
+export function createAdapter({ id, name, form, resolvers, eligibilityRules = [], customRules = [] }: AdapterConfig): CarrierAdapter {
   const resolve = (profile: CustomerProfile, now: Date): Resolutions => {
     const resolutions: Resolutions = {};
     for (const field of form.fields) {
@@ -35,5 +36,5 @@ export function createAdapter({ id, form, resolvers, eligibilityRules = [], cust
   const toRequest = (profile: CustomerProfile, answers: Answers, now: Date) =>
     buildRequest(form, resolve(profile, now), answers);
 
-  return { id, form, resolve, toRequest, eligibilityRules, customRules };
+  return { id, name, form, resolve, toRequest, eligibilityRules, customRules };
 }
