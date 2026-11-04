@@ -129,4 +129,40 @@ export interface CarrierAdapter {
   resolve(profile: CustomerProfile, now: Date): Resolutions;
   /** The carrier's quote request: profile resolutions merged with the customer's answers. */
   toRequest(profile: CustomerProfile, answers: Answers, now: Date): Record<string, unknown>;
+  /** Carrier rules beyond what the form JSON expresses. Each is an ASSUMPTION logged in docs/decisions.md. */
+  eligibilityRules: EligibilityRule[];
+  /** Carrier submit-time rules beyond the form JSON. */
+  customRules: ValidationRule[];
 }
+
+export interface EligibilityReason {
+  fieldKey: string;
+  label: string;
+  message: string;
+}
+
+export interface EligibilityResult {
+  eligible: boolean;
+  /** Every failing reason, never just the first. */
+  reasons: EligibilityReason[];
+}
+
+export interface ValidationError {
+  fieldKey: string;
+  message: string;
+}
+
+export interface RuleContext {
+  profile: CustomerProfile;
+  form: CarrierForm;
+  resolutions: Resolutions;
+  /** Profile resolutions merged with the customer's answers. */
+  values: Record<string, unknown>;
+  now: Date;
+}
+
+/** A carrier-specific eligibility rule. Returns the reasons it finds, possibly none. */
+export type EligibilityRule = (ctx: RuleContext) => EligibilityReason[];
+
+/** A carrier-specific submit-time rule. Returns the errors it finds, possibly none. */
+export type ValidationRule = (ctx: RuleContext) => ValidationError[];

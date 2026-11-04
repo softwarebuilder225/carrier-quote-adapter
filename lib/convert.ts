@@ -109,3 +109,54 @@ export function fullName(first: string, last: string): string {
     .filter(Boolean)
     .join(" ");
 }
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The inverse of formatDate: reads a date written in a YYYY/MM/DD-token pattern back into
+ * ISO YYYY-MM-DD. Null when the text does not fit the pattern or is not a real date.
+ */
+export function parseDate(value: string, pattern: string): string | null {
+  const order: string[] = [];
+  const source = escapeRegExp(pattern).replace(/YYYY|MM|DD/g, (token) => {
+    order.push(token);
+    return token === "YYYY" ? "(\\d{4})" : "(\\d{2})";
+  });
+  const m = new RegExp(`^${source}$`).exec(value.trim());
+  if (!m) return null;
+  const parts: Record<string, string> = {};
+  order.forEach((token, i) => {
+    parts[token] = m[i + 1];
+  });
+  const iso = `${parts.YYYY}-${parts.MM}-${parts.DD}`;
+  return parseIsoDate(iso) ? iso : null;
+}
+
+/** Accepts either ISO or the given pattern; returns ISO or null. */
+export function toIsoDate(value: unknown, pattern: string): string | null {
+  if (typeof value !== "string") return null;
+  return isIsoDate(value) ? value.trim() : parseDate(value, pattern);
+}
+
+/** The ISO date on which someone born on `isoBirthDate` turns `years`. 29 Feb becomes 1 Mar in common years. */
+export function birthdayAfterYears(isoBirthDate: string, years: number): string | null {
+  const b = parseIsoDate(isoBirthDate);
+  if (!b) return null;
+  const year = b.year + years;
+  const day = Math.min(b.day, daysInMonth(year, b.month));
+  const rolls = day < b.day; // only 29 Feb in a common year
+  return rolls ? `${year}-03-01` : `${year}-${pad2(b.month)}-${pad2(day)}`;
+}
+
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** "January 20, 2027" from an ISO date, with no time-zone involvement. */
+export function longDate(isoDate: string): string | null {
+  const p = parseIsoDate(isoDate);
+  return p ? `${MONTHS[p.month - 1]} ${p.day}, ${p.year}` : null;
+}

@@ -3,8 +3,8 @@
  * This is the only file that knows Harbor's field keys. See docs/mapping.md.
  */
 import { ceilToOption, formatDate, fullName, matchOption, stateName } from "@/lib/convert";
-import { optionsOf } from "@/lib/form";
-import type { FieldResolution, ResolverMap } from "@/lib/types";
+import { fieldByKey, optionsOf } from "@/lib/form";
+import type { EligibilityRule, FieldResolution, ResolverMap, ValidationRule } from "@/lib/types";
 
 function resolution(status: FieldResolution["status"], value?: unknown, hint?: string): FieldResolution {
   const r: FieldResolution = { status };
@@ -100,3 +100,50 @@ export const harborResolvers: ResolverMap = {
   // The profile knows nothing about the building.
   building_has_sprinklers: () => unknown(),
 };
+
+/**
+ * Harbor rules that the form JSON does not express. Each is an ASSUMPTION logged in
+ * docs/decisions.md and kept here, next to the mapping, rather than in the generic engines.
+ */
+export const harborEligibilityRules: EligibilityRule[] = [
+  // ASSUMPTION A1 (decisions.md #4): belongings worth more than the largest contents option
+  // cannot be covered by Harbor's product, so Harbor does not quote.
+  ({ profile, form }) => {
+    const field = fieldByKey(form, "contents_coverage");
+    if (!field) return [];
+    const max = Math.max(...optionsOf(field).filter(isNumber));
+    const value = profile.personal_property_value;
+    if (!isNumber(value) || value <= max) return [];
+    return [
+      {
+        fieldKey: field.key,
+        label: field.label,
+        message: `Your belongings are valued at ${usd(value)}, above the largest contents coverage offered, ${usd(max)}.`,
+      },
+    ];
+  },
+];
+
+export const harborValidationRules: ValidationRule[] = [
+  // ASSUMPTION A2 (decisions.md #1): the last 5 years contain the last 3, so the 5-year count
+  // cannot be below the 3-year count the profile already holds.
+  ({ profile, values }) => {
+    const answer = values.claims_last_5_years;
+    const floor = profile.claims_last_3_years;
+    if (!isNumber(answer) || !isNumber(floor) || answer >= floor) return [];
+    return [
+      {
+        fieldKey: "claims_last_5_years",
+        message:
+          `You reported ${floor} ${floor === 1 ? "claim" : "claims"} in the last 3 years. ` +
+          `The last 5 years include those 3, so this cannot be lower than ${floor}.`,
+      },
+    ];
+  },
+  // ASSUMPTION A3 (decisions.md #13): "None" cannot be combined with another pet.
+  ({ values }) => {
+    const pets = values.pets;
+    if (!Array.isArray(pets) || !pets.includes("None") || pets.length < 2) return [];
+    return [{ fieldKey: "pets", message: '"None" cannot be combined with other pets.' }];
+  },
+];
