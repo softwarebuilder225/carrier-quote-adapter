@@ -1,21 +1,26 @@
 /**
  * Submit-time validation of the merged values against the form JSON: required, type,
- * pattern, min and max, with showIf gating (a hidden field is neither required nor
+ * pattern, min, max and minAge, with showIf gating (a hidden field is neither required nor
  * validated). Then the carrier's customRules. Generic; nothing here knows a field key.
  */
-import { toIsoDate } from "./convert";
+import { ageOn, toIsoDate } from "./convert";
 import { isBlank, isFieldVisible } from "./form";
 import { effectiveValues } from "./request";
 import type { Answers, CarrierAdapter, CarrierField, CarrierForm, CustomerProfile, Resolutions, ValidationError } from "./types";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** The error for one visible, non-blank value, or null when it is acceptable. */
-function checkValue(field: CarrierField, value: unknown): string | null {
+/**
+ * The format problem with one non-blank value, or null. Carrier patterns are anchored here,
+ * so a pattern always has to match the whole value. No date-of-today logic: see checkAge.
+ */
+export function checkFormat(field: CarrierField, value: unknown): string | null {
   switch (field.type) {
     case "text": {
       if (typeof value !== "string") return "Enter text.";
-      if (field.pattern && !new RegExp(field.pattern).test(value.trim())) return `Must match the format ${field.pattern}.`;
+      if (field.pattern && !new RegExp(`^(?:${field.pattern})$`).test(value.trim())) {
+        return `Must match the format ${field.pattern}.`;
+      }
       return null;
     }
     case "email":
@@ -42,8 +47,18 @@ function checkValue(field: CarrierField, value: unknown): string | null {
   }
 }
 
+/** The minAge problem with a well-formed date value, or null. Applies to any date, typed or resolved. */
+export function checkAge(field: CarrierField, value: unknown, now: Date): string | null {
+  if (field.type !== "date" || field.validation?.minAge === undefined) return null;
+  const iso = toIsoDate(value, field.format);
+  const age = iso ? ageOn(iso, now) : null;
+  if (age === null) return null;
+  if (age < 0) return "Enter a date in the past.";
+  return age < field.validation.minAge ? `Applicants must be at least ${field.validation.minAge}.` : null;
+}
+
 /** Validates merged values against the form only. */
-export function validateValues(form: CarrierForm, values: Record<string, unknown>): ValidationError[] {
+export function validateValues(form: CarrierForm, values: Record<string, unknown>, now: Date): ValidationError[] {
   const errors: ValidationError[] = [];
   for (const field of form.fields) {
     if (!isFieldVisible(form, field, values)) continue;
@@ -52,7 +67,7 @@ export function validateValues(form: CarrierForm, values: Record<string, unknown
       if (field.required) errors.push({ fieldKey: field.key, message: "Required." });
       continue;
     }
-    const message = checkValue(field, value);
+    const message = checkFormat(field, value) ?? checkAge(field, value, now);
     if (message) errors.push({ fieldKey: field.key, message });
   }
   return errors;
@@ -63,11 +78,16 @@ export function validateValues(form: CarrierForm, values: Record<string, unknown
  * answers. A field gets one message: when the form-level check already failed for a field,
  * custom-rule errors for that field are dropped (fix the basic problem first).
  */
-export function validate(adapter: CarrierAdapter, profile: CustomerProfile, answers: Answers, now: Date): ValidationError[] {
+export function validate(
+  adapter: CarrierAdapter,
+  profile: CustomerProfile,
+  answers: Answers,
+  now: Date,
+  resolutions: Resolutions = adapter.resolve(profile, now),
+): ValidationError[] {
   const { form } = adapter;
-  const resolutions: Resolutions = adapter.resolve(profile, now);
   const values = effectiveValues(form, resolutions, answers);
-  const formErrors = validateValues(form, values);
+  const formErrors = validateValues(form, values, now);
   const failed = new Set(formErrors.map((e) => e.fieldKey));
   const customErrors = adapter.customRules
     .flatMap((rule) => rule({ profile, form, resolutions, values, now }))

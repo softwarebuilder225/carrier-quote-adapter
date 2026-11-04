@@ -72,3 +72,41 @@ describe("Harbor validation", () => {
     expect(errors.sort()).toEqual(["claims_last_5_years", "phone", "postal_code"]);
   });
 });
+
+describe("Harbor validation: typed and corrected values", () => {
+  it("age-checks a birth date the customer types when the profile could not answer it", () => {
+    // A non-ISO profile date resolves as unknown, so the field is asked.
+    const asked = { ...profileA, date_of_birth: "12/03/1994" };
+    expect(validate(harborAdapter, asked, { ...goodAnswers, date_of_birth: "01/01/2015" }, NOW).map((e) => e.message)).toEqual([
+      "Applicants must be at least 21.",
+    ]);
+    expect(validate(harborAdapter, asked, { ...goodAnswers, date_of_birth: "03/12/1994" }, NOW)).toEqual([]);
+  });
+
+  it("lets a customer correct a malformed profile zip", () => {
+    const badZip = { ...profileA, zip: "9720" };
+    expect(errorsFor(badZip, goodAnswers)).toEqual(["postal_code"]);
+    expect(errorsFor(badZip, { ...goodAnswers, postal_code: "97205" })).toEqual([]);
+  });
+
+  it("rejects a fractional claims count (ASSUMPTION A5)", () => {
+    const errors = validate(harborAdapter, profileA, { ...goodAnswers, claims_last_5_years: 1.5 }, NOW);
+    expect(errors.map((e) => e.message)).toEqual(["Enter a whole number of claims."]);
+  });
+
+  it("requires a cleared pre-filled coverage to be chosen again", () => {
+    expect(errorsFor(profileA, { ...goodAnswers, contents_coverage: null })).toEqual(["contents_coverage"]);
+  });
+});
+
+describe("Harbor validation: pets and claims edges", () => {
+  it("requires the breed when the customer adds Dog to a profile that had no dog", () => {
+    const noDog = { ...profileA, has_dog: false, dog_breed: null };
+    expect(errorsFor(noDog, { ...goodAnswers, pets: ["Dog"] })).toEqual(["dog_breed"]);
+    expect(errorsFor(noDog, { ...goodAnswers, pets: ["Dog"], dog_breed: "Labrador" })).toEqual([]);
+  });
+
+  it("does not invent a maximum number of claims", () => {
+    expect(errorsFor(profileA, { ...goodAnswers, claims_last_5_years: 50 })).toEqual([]);
+  });
+});

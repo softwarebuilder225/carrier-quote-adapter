@@ -17,11 +17,18 @@ export function eligibilityFromForm(form: CarrierForm, resolutions: Resolutions,
     const resolution = resolutions[field.key];
     if (!resolution || resolution.value === undefined) continue;
 
-    // Rule: a date field with validation.minAge.
+    // Rule: a date field with validation.minAge, applied to the profile's date.
+    // (A date the customer types instead is age-checked by lib/validate at submit.)
     if (field.type === "date" && field.validation?.minAge !== undefined) {
       const iso = toIsoDate(resolution.value, field.format);
       const age = iso ? ageOn(iso, now) : null;
-      if (iso && age !== null && age < field.validation.minAge) {
+      if (iso && age !== null && age < 0) {
+        reasons.push({
+          fieldKey: field.key,
+          label: field.label,
+          message: `${field.label} ${String(resolution.value)} is in the future, so the profile cannot be right.`,
+        });
+      } else if (iso && age !== null && age < field.validation.minAge) {
         const minAge = field.validation.minAge;
         const eligibleFrom = birthdayAfterYears(iso, minAge);
         reasons.push({
@@ -50,9 +57,13 @@ export function eligibilityFromForm(form: CarrierForm, resolutions: Resolutions,
   return reasons;
 }
 
-export function checkEligibility(adapter: CarrierAdapter, profile: CustomerProfile, now: Date): EligibilityResult {
+export function checkEligibility(
+  adapter: CarrierAdapter,
+  profile: CustomerProfile,
+  now: Date,
+  resolutions: Resolutions = adapter.resolve(profile, now),
+): EligibilityResult {
   const { form } = adapter;
-  const resolutions = adapter.resolve(profile, now);
   const values = effectiveValues(form, resolutions, {});
   const ctx = { profile, form, resolutions, values, now };
 

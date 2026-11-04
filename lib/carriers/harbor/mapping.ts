@@ -20,6 +20,7 @@ const isNumber = (v: unknown): v is number => typeof v === "number" && Number.is
 
 export const harborResolvers: ResolverMap = {
   applicant_full_name: (p) => {
+    // ASSUMPTION A4 (decisions.md #11): first_name + last_name is the legal name.
     const name = fullName(p.first_name, p.last_name);
     return name ? answered(name) : unknown();
   },
@@ -39,6 +40,7 @@ export const harborResolvers: ResolverMap = {
   phone: () => unknown(),
 
   residence_state: (p) => {
+    // ASSUMPTION A4 (decisions.md #11): the profile's `state` is the state of residence.
     // Code -> full name. A state outside Harbor's options is a fact about the customer, so it is
     // an eligibility failure (lib/eligibility), never a question. An unrecognised code is passed
     // through unchanged so the eligibility message shows what the profile contained.
@@ -69,25 +71,36 @@ export const harborResolvers: ResolverMap = {
     return partial(bucket, `Your profile lists ${usd(value)} of belongings; ${usd(bucket)} is the smallest option that covers it.`);
   },
 
-  pets: (p) =>
+  pets: (p) => {
     // has_dog only says whether "Dog" belongs in the list. It says nothing about cats or other
     // animals, and false is not "None". Always confirmed by the customer.
-    p.has_dog
-      ? partial(["Dog"], "Your profile says there is a dog. Add any other pets, then confirm.")
-      : partial(undefined, 'Your profile says there is no dog. Select any other pets, or "None".'),
+    if (p.has_dog) return partial(["Dog"], "Your profile says there is a dog. Add any other pets, then confirm.");
+    const breed = (p.dog_breed ?? "").trim();
+    return partial(
+      undefined,
+      breed
+        ? `Your profile says there is no dog but lists a dog breed ("${breed}"). Select the pets you actually have.`
+        : 'Your profile says there is no dog. Select any other pets, or "None".',
+    );
+  },
 
   dog_breed: (p, { field }) => {
     // Shown only when pets includes "Dog" (showIf). If the customer adds a dog the profile did
     // not know about, the field appears and is asked.
-    if (!p.has_dog) return unknown();
     const breed = (p.dog_breed ?? "").trim();
-    if (!breed) return unknown("Your profile has a dog but no breed.");
     const options = optionsOf(field).map(String);
+    if (!p.has_dog) {
+      if (!breed) return unknown();
+      // Contradictory profile (no dog, but a breed): keep the breed so it pre-fills if the
+      // customer adds "Dog", and let them confirm it.
+      const match = matchOption(breed, options, null);
+      return partial(match ?? "Other", `Your profile says there is no dog but lists the breed "${breed}". Please confirm.`);
+    }
+    if (!breed) return unknown("Your profile has a dog but no breed.");
     const match = matchOption(breed, options, null);
     if (match) return answered(match);
     return partial("Other", `Your profile lists the breed as "${breed}", which is not one of the options, so "Other" is pre-selected.`);
   },
-
   claims_last_5_years: (p) => {
     // Different time window. The 3-year count is a lower bound for the 5-year count, not the
     // value, so this is asked. Not pre-filled: a pre-filled number invites silent under-reporting.
@@ -147,3 +160,14 @@ export const harborValidationRules: ValidationRule[] = [
     return [{ fieldKey: "pets", message: '"None" cannot be combined with other pets.' }];
   },
 ];
+
+// ASSUMPTION A5 (decisions.md #14): a count of claims is a whole number. The JSON only says
+// `type: number, min: 0`.
+harborValidationRules.push(({ values }) => {
+  const answer = values.claims_last_5_years;
+  if (!isNumber(answer) || Number.isInteger(answer)) return [];
+  return [{ fieldKey: "claims_last_5_years", message: "Enter a whole number of claims." }];
+});
+
+// ASSUMPTION A3 (decisions.md #13), UI half: ticking "None" clears the other pets and vice versa.
+export const harborExclusiveOptions: Record<string, string[]> = { pets: ["None"] };

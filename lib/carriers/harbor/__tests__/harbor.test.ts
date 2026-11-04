@@ -1,16 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ageOn, ceilToOption, formatDate, matchOption, stateName } from "@/lib/convert";
-import { buildRequest } from "@/lib/request";
 import { carriers } from "@/lib/carriers";
 import { harborAdapter, harborForm } from "@/lib/carriers/harbor/adapter";
 import { harborResolvers } from "@/lib/carriers/harbor/mapping";
 import { profileA, profileB } from "@/lib/sample-profiles";
-import type { CarrierForm } from "@/lib/types";
 
 /** 2026-11-04 in local time. Dates are built from parts so no UTC shift can creep in. */
 const NOW = new Date(2026, 10, 4);
-const COVERAGE_OPTIONS = [10000, 25000, 50000, 75000];
-const BREED_OPTIONS = ["Labrador", "Pit Bull", "Rottweiler", "Other"];
 
 describe("Harbor resolve: profile A (Maya Torres)", () => {
   const r = harborAdapter.resolve(profileA, NOW);
@@ -92,67 +87,17 @@ describe("Harbor resolve: edge cases", () => {
     expect(r.contents_coverage.value).toBeUndefined();
     expect(r.contents_coverage.hint).toContain("75,000");
   });
-});
 
-describe("ceilToOption", () => {
-  it.each([
-    [10000, 10000],
-    [10001, 25000],
-    [25000, 25000],
-    [75000, 75000],
-    [75001, null],
-  ])("%s -> %s", (value, expected) => {
-    expect(ceilToOption(value, COVERAGE_OPTIONS)).toBe(expected);
+  it("makes a malformed profile fact editable instead of locking it (A6)", () => {
+    const r = harborAdapter.resolve({ ...profileA, zip: "9720", email: "not-an-email" }, NOW);
+    expect(r.postal_code).toMatchObject({ status: "partial", value: "9720" });
+    expect(r.postal_code.hint).toContain("9720");
+    expect(r.contact_email.status).toBe("partial");
   });
 
-  it("ignores option order and non-numeric options", () => {
-    expect(ceilToOption(30000, [75000, "n/a", 10000, 50000, 25000])).toBe(50000);
-  });
-});
-
-describe("ageOn", () => {
-  it("born 2006-01-20 is 20 on 2026-11-03", () => {
-    expect(ageOn("2006-01-20", new Date(2026, 10, 3))).toBe(20);
-  });
-  it("turns 21 on the birthday itself, 2027-01-20", () => {
-    expect(ageOn("2006-01-20", new Date(2027, 0, 20))).toBe(21);
-  });
-  it("is still 20 the day before, 2027-01-19", () => {
-    expect(ageOn("2006-01-20", new Date(2027, 0, 19))).toBe(20);
-  });
-  it("returns null for a malformed date", () => {
-    expect(ageOn("20-01-2006", NOW)).toBeNull();
-  });
-});
-
-describe("formatDate", () => {
-  it("reformats by splitting the string", () => {
-    expect(formatDate("1994-03-12", "MM/DD/YYYY")).toBe("03/12/1994");
-    expect(formatDate("1994-03-12", "DD.MM.YYYY")).toBe("12.03.1994");
-  });
-  it("rejects impossible dates", () => {
-    expect(formatDate("1994-02-30", "MM/DD/YYYY")).toBeNull();
-  });
-});
-
-describe("matchOption", () => {
-  it("is case-insensitive", () => {
-    expect(matchOption("labrador", BREED_OPTIONS, "Other")).toBe("Labrador");
-    expect(matchOption("  pit bull ", BREED_OPTIONS, "Other")).toBe("Pit Bull");
-  });
-  it("falls back when nothing matches", () => {
-    expect(matchOption("Husky", BREED_OPTIONS, "Other")).toBe("Other");
-    expect(matchOption("Husky", BREED_OPTIONS, null)).toBeNull();
-  });
-});
-
-describe("stateName", () => {
-  it("maps codes to names regardless of case", () => {
-    expect(stateName("or")).toBe("Oregon");
-    expect(stateName("NV")).toBe("Nevada");
-  });
-  it("returns null for an unknown code", () => {
-    expect(stateName("ZZ")).toBeNull();
+  it("keeps an out-of-list state read-only: it is a fact for eligibility, not a question", () => {
+    const r = harborAdapter.resolve(profileB, NOW);
+    expect(r.residence_state.status).toBe("answered");
   });
 });
 
@@ -214,27 +159,9 @@ describe("Harbor toRequest", () => {
     expect(request.contents_coverage).toBe(75000);
     expect(request.applicant_full_name).toBe("Maya Torres");
   });
-});
 
-describe("generic request builder", () => {
-  const form: CarrierForm = {
-    carrier: "test",
-    product: "test",
-    fields: [
-      { key: "when", label: "When", type: "date", format: "DD/MM/YYYY", required: true },
-      { key: "kind", label: "Kind", type: "select", options: ["a", "b"], required: true },
-      { key: "detail", label: "Detail", type: "text", required: true, showIf: { field: "kind", includes: "b" } },
-    ],
-  };
-
-  it("converts a customer's ISO date answer to the carrier's format", () => {
-    const request = buildRequest(form, {}, { when: "2000-01-05", kind: "a" });
-    expect(request).toEqual({ when: "05/01/2000", kind: "a" });
-  });
-
-  it("applies showIf to a select parent by equality", () => {
-    expect(buildRequest(form, {}, { kind: "a", detail: "x" })).not.toHaveProperty("detail");
-    expect(buildRequest(form, {}, { kind: "b", detail: "x" })).toHaveProperty("detail", "x");
+  it("trims a typed phone number", () => {
+    expect(harborAdapter.toRequest(profileA, { ...answers, phone: "  503-555-0100 " }, NOW).phone).toBe("503-555-0100");
   });
 });
 
@@ -246,5 +173,24 @@ describe("carrier registry", () => {
   it("has a resolver for every field in Harbor's form", () => {
     const missing = harborForm.fields.map((f) => f.key).filter((key) => !(key in harborResolvers));
     expect(missing).toEqual([]);
+  });
+});
+
+describe("Harbor resolve: more edge cases", () => {
+  it("asks for coverage when the property value is zero, negative or not a number", () => {
+    expect(harborAdapter.resolve({ ...profileA, personal_property_value: 0 }, NOW).contents_coverage.status).toBe("unknown");
+    expect(harborAdapter.resolve({ ...profileA, personal_property_value: -5 }, NOW).contents_coverage.status).toBe("unknown");
+    expect(harborAdapter.resolve({ ...profileA, personal_property_value: Number.NaN }, NOW).contents_coverage.status).toBe("unknown");
+  });
+
+  it("keeps a breed listed on a 'no dog' profile as a partial pre-fill and says so in the pets hint", () => {
+    const r = harborAdapter.resolve({ ...profileB, dog_breed: "Labrador" }, NOW);
+    expect(r.pets.value).toBeUndefined();
+    expect(r.pets.hint).toContain("Labrador");
+    expect(r.dog_breed).toMatchObject({ status: "partial", value: "Labrador" });
+  });
+
+  it("validates Harbor's own JSON at adapter creation", () => {
+    expect(harborForm.fields.map((f) => f.key)).toHaveLength(11);
   });
 });

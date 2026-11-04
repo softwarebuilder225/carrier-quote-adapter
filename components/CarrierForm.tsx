@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { FieldInput, inputId } from "./FieldInput";
-import { isFieldVisible } from "@/lib/form";
+import { FieldInput, inputId, isGroupField } from "./FieldInput";
+import { visibleFields } from "@/lib/form";
 import { effectiveValues } from "@/lib/request";
 import type { Answers, CarrierField, CarrierForm as CarrierFormDefinition, ResolutionStatus, Resolutions, ValidationError } from "@/lib/types";
 
@@ -11,6 +11,7 @@ interface Props {
   resolutions: Resolutions;
   /** Rendered but not submittable (the customer is ineligible). */
   disabled?: boolean;
+  exclusiveOptions?: Record<string, string[]>;
   validate: (answers: Answers) => ValidationError[];
   buildRequest: (answers: Answers) => Record<string, unknown>;
   requestTitle: string;
@@ -22,31 +23,24 @@ const SECTION_TITLES: Record<ResolutionStatus, string> = {
   unknown: "We need a few more details",
 };
 
-/** Partial fields start with their pre-filled value; unknown fields start empty. */
-function initialAnswers(resolutions: Resolutions): Answers {
-  const answers: Answers = {};
-  for (const [key, r] of Object.entries(resolutions)) {
-    if (r.status === "partial" && r.value !== undefined) answers[key] = r.value;
-  }
-  return answers;
-}
-
 /**
  * Generic renderer: the carrier's form JSON plus the profile resolutions decide what is
  * shown, what is read-only and what is asked. All checks happen in lib/ via the props.
+ * Answers hold only what the customer touched; pre-filled values come from the resolutions.
  */
-export function CarrierForm({ form, resolutions, disabled = false, validate, buildRequest, requestTitle }: Props) {
-  const [answers, setAnswers] = useState<Answers>(() => initialAnswers(resolutions));
+export function CarrierForm({ form, resolutions, disabled = false, exclusiveOptions = {}, validate, buildRequest, requestTitle }: Props) {
+  const [answers, setAnswers] = useState<Answers>({});
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [request, setRequest] = useState<Record<string, unknown> | null>(null);
 
   const values = effectiveValues(form, resolutions, answers);
-  const visible = form.fields.filter((field) => isFieldVisible(form, field, values));
+  const visible = visibleFields(form, values);
   const statusOf = (field: CarrierField): ResolutionStatus => resolutions[field.key]?.status ?? "unknown";
   const errorFor = (key: string) => errors.find((e) => e.fieldKey === key)?.message;
 
   const setAnswer = (key: string, value: unknown) => {
     setAnswers((current) => ({ ...current, [key]: value }));
+    setErrors((current) => current.filter((e) => e.fieldKey !== key)); // the customer is fixing it
     setRequest(null);
   };
 
@@ -59,26 +53,37 @@ export function CarrierForm({ form, resolutions, disabled = false, validate, bui
 
   const renderField = (field: CarrierField) => {
     const status = statusOf(field);
+    const readOnly = status === "answered";
     const hint = resolutions[field.key]?.hint;
     const error = errorFor(field.key);
+    const labelText = (
+      <>
+        {field.label}
+        {!field.required && <span className="muted"> (optional)</span>}
+      </>
+    );
     return (
       <div key={field.key} className={`field${error ? " has-error" : ""}`}>
         <div className="field-label" id={`${inputId(field.key)}-label`}>
-          <label htmlFor={inputId(field.key)}>
-            {field.label}
-            {!field.required && <span className="muted"> (optional)</span>}
-          </label>
-          {status === "answered" && <span className="badge">From your profile</span>}
+          {isGroupField(field) && !readOnly ? (
+            // A checkbox or radio group has no single labelable element; the group is
+            // labelled through aria-labelledby instead.
+            <span>{labelText}</span>
+          ) : (
+            <label htmlFor={inputId(field.key)}>{labelText}</label>
+          )}
+          {readOnly && <span className="badge">From your profile</span>}
         </div>
         <FieldInput
           field={field}
           value={values[field.key]}
           onChange={(value) => setAnswer(field.key, value)}
           disabled={disabled}
-          readOnly={status === "answered"}
+          readOnly={readOnly}
           invalid={Boolean(error)}
+          exclusiveOptions={exclusiveOptions[field.key]}
         />
-        {status !== "answered" && hint && <p className="hint">{hint}</p>}
+        {!readOnly && hint && <p className="hint">{hint}</p>}
         {error && (
           <p className="error" role="alert">
             {error}

@@ -20,14 +20,17 @@ export interface CustomerProfile {
   claims_last_3_years: number;
 }
 
+export type ShowIfValue = string | number | boolean;
+
 /**
- * A field is shown only when another field has a given value.
- * If the other field's value is an array, "includes" means membership; otherwise equality.
+ * A field is shown only when another field's value satisfies the condition. Exactly one
+ * operator is given: `includes` (membership for array values, equality otherwise),
+ * `notIncludes` (its negation) or `equals` (strict equality).
  */
-export interface ShowIf {
-  field: string;
-  includes: string | number | boolean;
-}
+export type ShowIf =
+  | { field: string; includes: ShowIfValue }
+  | { field: string; notIncludes: ShowIfValue }
+  | { field: string; equals: ShowIfValue };
 
 interface FieldBase {
   key: string;
@@ -135,6 +138,8 @@ export interface CarrierAdapter {
   eligibilityRules: EligibilityRule[];
   /** Carrier submit-time rules beyond the form JSON. */
   customRules: ValidationRule[];
+  /** Multiselect options that cannot be combined with the others, by field key (e.g. "None"). */
+  exclusiveOptions: Record<string, string[]>;
 }
 
 export interface EligibilityReason {

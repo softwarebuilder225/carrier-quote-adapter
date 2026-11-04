@@ -33,3 +33,11 @@ describe("parseProfile", () => {
     expect(result).toEqual({ ok: true, profile: { ...withoutBreed, dog_breed: null } });
   });
 });
+
+describe("parseProfile: date_of_birth", () => {
+  it("must be an ISO calendar date", () => {
+    const result = parseProfile(JSON.stringify({ ...profileA, date_of_birth: "12/03/1994" }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("YYYY-MM-DD");
+  });
+});

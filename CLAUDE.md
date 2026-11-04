@@ -13,7 +13,8 @@ Harbor form JSON and the two sample profiles. Never edit those inputs. docs/mapp
   React. It must be callable from tests with plain objects.
 - A carrier is data plus one mapping module: `lib/carriers/<id>/form.json` and
   `lib/carriers/<id>/mapping.ts`. The renderer and validator are generic and driven by the
-  form JSON. Nothing outside `lib/carriers/harbor/` may mention a Harbor field key.
+  form JSON. Nothing outside `lib/carriers/harbor/` may mention a Harbor field key; a
+  carrier's tests live in `lib/carriers/<id>/__tests__/`.
 - Every field resolution carries a status: `answered` (profile fully answers it, shown
   read-only), `partial` (profile gives a hint, customer must confirm), `unknown` (ask).
 - Anything that depends on "today" takes a `now: Date` parameter. Parse `YYYY-MM-DD` by

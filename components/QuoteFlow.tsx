@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { CarrierForm } from "./CarrierForm";
 import { getCarrier } from "@/lib/carriers";
 import { checkEligibility } from "@/lib/eligibility";
 import { parseProfile } from "@/lib/profile";
+import { buildRequest } from "@/lib/request";
 import { sampleProfiles } from "@/lib/sample-profiles";
 import { validate } from "@/lib/validate";
 import type { Answers } from "@/lib/types";
@@ -27,15 +28,23 @@ export function QuoteFlow({ carrierId }: { carrierId: string }) {
   const [selection, setSelection] = useState<string>(sampleProfiles[0].id);
   const [customJson, setCustomJson] = useState("");
 
-  const sample = sampleProfiles.find((s) => s.id === selection);
-  const parsed = sample ? { ok: true as const, profile: sample.profile } : parseProfile(customJson);
+  const parsed = useMemo(() => {
+    const sample = sampleProfiles.find((s) => s.id === selection);
+    return sample ? { ok: true as const, profile: sample.profile } : parseProfile(customJson);
+  }, [selection, customJson]);
   const profile = parsed.ok ? parsed.profile : null;
+
+  // Resolve the profile once per change; eligibility, the form, validation and the request
+  // all share the result.
+  const resolutions = useMemo(() => (profile && now ? adapter.resolve(profile, now) : null), [adapter, profile, now]);
+  const eligibility = useMemo(
+    () => (profile && now && resolutions ? checkEligibility(adapter, profile, now, resolutions) : null),
+    [adapter, profile, now, resolutions],
+  );
+  const profileJson = useMemo(() => (profile ? JSON.stringify(profile, null, 2) : ""), [profile]);
 
   // Eligibility and age depend on today's date, so the flow renders only in the browser.
   if (!now) return <p className="muted">Loading…</p>;
-  const eligibility = profile ? checkEligibility(adapter, profile, now) : null;
-  const resolutions = profile ? adapter.resolve(profile, now) : null;
-  const formKey = `${selection}:${profile ? JSON.stringify(profile) : ""}`;
 
   return (
     <div className="quote-flow">
@@ -66,7 +75,7 @@ export function QuoteFlow({ carrierId }: { carrierId: string }) {
             {!parsed.ok && customJson.trim() !== "" && <p className="error">{parsed.error}</p>}
           </>
         )}
-        {profile && <pre className="profile">{JSON.stringify(profile, null, 2)}</pre>}
+        {profile && <pre className="profile">{profileJson}</pre>}
       </section>
 
       {profile && eligibility && resolutions && (
@@ -83,12 +92,13 @@ export function QuoteFlow({ carrierId }: { carrierId: string }) {
             </section>
           )}
           <CarrierForm
-            key={formKey}
+            key={`${selection}:${profileJson}`}
             form={adapter.form}
             resolutions={resolutions}
             disabled={!eligibility.eligible}
-            validate={(answers: Answers) => validate(adapter, profile, answers, now)}
-            buildRequest={(answers: Answers) => adapter.toRequest(profile, answers, now)}
+            exclusiveOptions={adapter.exclusiveOptions}
+            validate={(answers: Answers) => validate(adapter, profile, answers, now, resolutions)}
+            buildRequest={(answers: Answers) => buildRequest(adapter.form, resolutions, answers)}
             requestTitle={`${adapter.name} quote request`}
           />
         </>

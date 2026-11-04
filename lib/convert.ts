@@ -116,13 +116,14 @@ function escapeRegExp(s: string): string {
 
 /**
  * The inverse of formatDate: reads a date written in a YYYY/MM/DD-token pattern back into
- * ISO YYYY-MM-DD. Null when the text does not fit the pattern or is not a real date.
+ * ISO. Day and month may be one or two digits, so "3/5/1990" satisfies "MM/DD/YYYY".
+ * Null when the text does not fit the pattern or is not a real date.
  */
 export function parseDate(value: string, pattern: string): string | null {
   const order: string[] = [];
   const source = escapeRegExp(pattern).replace(/YYYY|MM|DD/g, (token) => {
     order.push(token);
-    return token === "YYYY" ? "(\\d{4})" : "(\\d{2})";
+    return token === "YYYY" ? "(\\d{4})" : "(\\d{1,2})";
   });
   const m = new RegExp(`^${source}$`).exec(value.trim());
   if (!m) return null;
@@ -130,7 +131,7 @@ export function parseDate(value: string, pattern: string): string | null {
   order.forEach((token, i) => {
     parts[token] = m[i + 1];
   });
-  const iso = `${parts.YYYY}-${parts.MM}-${parts.DD}`;
+  const iso = `${parts.YYYY}-${parts.MM.padStart(2, "0")}-${parts.DD.padStart(2, "0")}`;
   return parseIsoDate(iso) ? iso : null;
 }
 

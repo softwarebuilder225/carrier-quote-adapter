@@ -60,3 +60,16 @@ describe("Harbor eligibility", () => {
     expect(checkEligibility(harborAdapter, { ...profileA, dog_breed: "Rottweiler" }, NOW).eligible).toBe(true);
   });
 });
+
+describe("Harbor eligibility: bad profile data", () => {
+  it("reports a birth date in the future instead of a negative age", () => {
+    const result = checkEligibility(harborAdapter, { ...profileA, date_of_birth: "2030-05-05" }, NOW);
+    expect(result.eligible).toBe(false);
+    expect(result.reasons[0].fieldKey).toBe("date_of_birth");
+    expect(result.reasons[0].message).toContain("in the future");
+  });
+
+  it("does not treat a malformed zip as ineligibility; the field becomes editable instead", () => {
+    expect(checkEligibility(harborAdapter, { ...profileA, zip: "9720" }, NOW).eligible).toBe(true);
+  });
+});

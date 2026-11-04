@@ -1,6 +1,7 @@
 /**
  * Parses a customer profile pasted as JSON and checks its shape. No carrier knowledge.
  */
+import { parseIsoDate } from "./convert";
 import type { CustomerProfile } from "./types";
 
 export type ParseProfileResult = { ok: true; profile: CustomerProfile } | { ok: false; error: string };
@@ -22,6 +23,7 @@ export function parseProfile(json: string): ParseProfileResult {
   for (const key of STRING_KEYS) {
     if (typeof obj[key] !== "string") problems.push(`${key} must be a string`);
   }
+  if (typeof obj.date_of_birth === "string" && !parseIsoDate(obj.date_of_birth)) problems.push("date_of_birth must be YYYY-MM-DD");
   if (typeof obj.personal_property_value !== "number") problems.push("personal_property_value must be a number");
   if (typeof obj.has_dog !== "boolean") problems.push("has_dog must be true or false");
   if (obj.dog_breed !== undefined && obj.dog_breed !== null && typeof obj.dog_breed !== "string") {
